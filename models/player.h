@@ -28,46 +28,34 @@ public:
     );
 
     // Getters
-    string getid() const;
+    string getplayerid() const;
     string getname() const;
-
     double getbal() const;
-
     int getgamesplayed() const;
+    double gettotalwagered() const;
+    double gettwon() const;
+    double gettlost() const;
+    int getcwins() const;
+    int getcloss() const;
+    double getbwin() const;
+    double getbloss() const;
+    bool isfraud() const;
+    double getrisk() const;
+    int getrank() const;
 
-    double getTotalWagered() const;
-    double getWon() const;
-    double getLost() const;
-
-    int getwcount() const;
-    int getlcount() const;
-
-    double getBiggestWin() const;
-    double getBiggestLoss() const;
-
-    bool isfruad() const;
-
-    double getRiskScore() const;
-
-    int getRank() const;
-
-    chrono::system_clock::time_point getCreationDate() const;
+    chrono::system_clock::time_point getcreation() const;
 
     // Setters
     void setname(const std::string& username);
     void setbal(double bal);
-    void setfruad(bool flag);
-    void setrisk(double score);
-    void setRank(int rank);
+    void setfruad(bool f);
+    void setrisk(double s);
+    void setrank(int r);
 
     // Statistics Updates
     void addwager(double amount);
-
     void recordwin(double amount);
-
     void recordloss(double amount);
-
     double getwinrate() const;
-
     double getROI() const;
 };
