@@ -36,7 +36,4 @@ class Bet{
     void setexpvalue(double e);
     void setrecamt(double re);
 
-    void setbetamt(double amt);
-    void setbetrisk(int r);
-
 };

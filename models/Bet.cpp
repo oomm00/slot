@@ -1,7 +1,7 @@
 #include<iostream>
 #include<vector>
 #include <chrono>
-#include "bet.h"
+#include "Bet.h"
 using namespace std;
 
 Bet::Bet(const string& bid,const string& p,double a ,std::chrono::year_month_day t,int btype,int r,double e,double re):betid(bid),pid(p),betamt(a),time(t),bettype(btype),risk(r),expected(e),recom(re){}
@@ -20,10 +20,8 @@ double Bet::getrecamt() const { return recom; }
 
 void Bet::setbetid(const std::string& bid) { betid = bid; }
 void Bet::setplayerid(const std::string& pid) { this->pid = pid; }
-void Bet::setbetamt(double amt) { betamt = amt; }
 void Bet::settime(std::chrono::year_month_day t) { time = t; }
 void Bet::setbtype(int btype) { bettype = btype; }
-void Bet::setrisk(int r) { risk = r; }
 void Bet::setexpvalue(double e) { expected = e; }
 void Bet::setrecamt(double re) { recom = re; }
 
@@ -33,7 +31,7 @@ void Bet::setbetamt(double amt)
     if (amt >= 0)
         betamt = amt;
 }
-void Bet::setbetrisk(int r)
+void Bet::setrisk(int r)
 {
     if (r >= 0 && r <= 100)
         risk = r;
