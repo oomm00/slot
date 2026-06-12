@@ -1,21 +1,19 @@
 #pragma once
-
-#include<iostream>
-#include<vector>
-#include<string>
-using namespace std;
+#include <string>
+#include <vector>
+#include "BetType.h"
 
 class GameRecord {
-
 private:
     int gameid;
-    string playerid;
-    string betid;
-    string spinid;
-    string timestamp;
+    std::string playerid;
+    std::string betid;
+    std::string spinid;
+    std::string timestamp;
     double betamt;
-    string bettype;
-    vector<string> spinsymbols;
+    BetType bettype;
+    std::vector<std::string> prediction;
+    std::vector<std::string> spinsymbols;
     bool win;
     double payout;
     double balbefore;
@@ -23,47 +21,37 @@ private:
     double fraud;
 
 public:
+    GameRecord(int gid, const std::string& pid, const std::string& bid,
+               const std::string& sid, const std::string& time,
+               double amt, BetType btype,
+               const std::vector<std::string>& pred,
+               const std::vector<std::string>& symbols,
+               bool w, double pay, double before, double after, double fraud);
 
-    GameRecord(
-        int gid,
-        const string& pid,
-        const string& bid,
-        const string& sid,
-        const string& time,
-        double amt,
-        const string& btype,
-        const vector<string>& symbols,
-        bool w,
-        double pay,
-        double before,
-        double after,
-        double fraud
-    );
-
-    // Getters
     int getgameid() const;
-    string getplayerid() const;
-    string getbetid() const;
-    string getspinid() const;
-    string gettime() const;
+    std::string getplayerid() const;
+    std::string getbetid() const;
+    std::string getspinid() const;
+    std::string gettime() const;
     double getbetamt() const;
-    string getbettype() const;
-    vector<string> getspinsymbols() const;
+    BetType getbettype() const;
+    std::vector<std::string> getprediction() const;
+    std::vector<std::string> getspinsymbols() const;
     bool iswin() const;
     double getpayout() const;
     double getbalbefore() const;
     double getbalafter() const;
     double getfraud() const;
 
-    // Setters
     void setgameid(int g);
-    void setplayerid(const string& p);
-    void setbetid(const string& bi);
-    void setspinid(const string& s);
-    void settimestamp(const string& t);
+    void setplayerid(const std::string& p);
+    void setbetid(const std::string& bi);
+    void setspinid(const std::string& s);
+    void settimestamp(const std::string& t);
     void setbetamt(double amt);
-    void setbettype(const string& btype);
-    void setspinsymbols(const vector<string>& symb);
+    void setbettype(BetType btype);
+    void setprediction(const std::vector<std::string>& pred);
+    void setspinsymbols(const std::vector<std::string>& symb);
     void setwin(bool w);
     void setpayout(double pay);
     void setbalbefore(double b);

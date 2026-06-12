@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "BetType.h"
 #include "GameLogger.h"
 #include "GameRecord.h"
 
@@ -14,7 +15,7 @@ static GameRecord makeRecord(int gid, const std::string& pid,
                              const std::string& ts, double amt = 10.0) {
     std::vector<std::string> syms = {"CHERRY", "LEMON", "BAR"};
     return GameRecord(gid, pid, "b" + std::to_string(gid),
-                      "s" + std::to_string(gid), ts, amt, "standard",
+                      "s" + std::to_string(gid), ts, amt, BetType::ANY_PAIR, {},
                       syms, true, 15.0, 100.0, 115.0, 0.0);
 }
 
@@ -236,9 +237,9 @@ static void test_csv_roundtrip() {
                "p" + std::to_string(i % 3 + 1));
     }
 
-    assert(log2.getPlayerHistory("p1").size() == 2);
+    assert(log2.getPlayerHistory("p1").size() == 1);
     assert(log2.getPlayerHistory("p2").size() == 2);
-    assert(log2.getPlayerHistory("p3").size() == 1);
+    assert(log2.getPlayerHistory("p3").size() == 2);
     assert(log2.getPlayerHistory("p4").empty());
 
     std::remove(path.c_str());

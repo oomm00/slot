@@ -1,11 +1,15 @@
 #pragma once
 #include <string>
 #include <chrono>
-using namespace std;
+
 class player {
 private:
-    string pid;
-    string username;
+    std::string pid;
+    std::string name;
+    std::string username;
+    std::string passwordHash;
+    std::string role;
+    int age;
     double balance;
     int gamesplayed;
     double totalwagered;
@@ -18,18 +22,20 @@ private:
     bool fraud;
     double risk;
     int rank;
-    chrono::system_clock::time_point creation;
+    std::chrono::system_clock::time_point creation;
 
 public:
-    player(
-        const string& playerId,
-        const string& username,
-        double initialBalance
-    );
+    player(const std::string& playerId, const std::string& name,
+           const std::string& username, double initialBalance,
+           const std::string& passwordHash,
+           const std::string& role = "player", int age = 18);
 
-    // Getters
-    string getplayerid() const;
-    string getname() const;
+    std::string getplayerid() const;
+    std::string getname() const;
+    std::string getusername() const;
+    std::string getPasswordHash() const;
+    std::string getRole() const;
+    int getAge() const;
     double getbal() const;
     int getgamesplayed() const;
     double gettotalwagered() const;
@@ -42,17 +48,26 @@ public:
     bool isfraud() const;
     double getrisk() const;
     int getrank() const;
+    std::chrono::system_clock::time_point getcreation() const;
 
-    chrono::system_clock::time_point getcreation() const;
-
-    // Setters
     void setname(const std::string& username);
+    void setPasswordHash(const std::string& hash);
+    void setRole(const std::string& role);
+    void setAge(int age);
     void setbal(double bal);
     void setfruad(bool f);
     void setrisk(double s);
     void setrank(int r);
+    void setgamesplayed(int n);
+    void settotalwagered(double amt);
+    void settwon(double amt);
+    void settlost(double amt);
+    void setcwins(int n);
+    void setcloss(int n);
+    void setbwin(double amt);
+    void setbloss(double amt);
+    void setcreation(std::chrono::system_clock::time_point t);
 
-    // Statistics Updates
     void addwager(double amount);
     void recordwin(double amount);
     void recordloss(double amount);

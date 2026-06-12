@@ -1,3 +1,10 @@
 *.exe
+*.o
 .vscode/
 build/
+data/
+server_stderr.txt
+server_stdout.txt
+slot/slot-ui/
+slot-ui/node_modules/
+slot-ui/dist/
