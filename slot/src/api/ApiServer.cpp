@@ -976,13 +976,9 @@ void ApiServer::registerRoutes() {
         res.set_content(R"({"status":"ok"})", "application/json");
     });
 
-    // ── Static file serving for built frontend ─────────────────────
-    // Serve ../slot-ui/dist/ at root for non-API routes
-    svr_.set_mount_point("/", "../slot-ui/dist");
 }
 
 void ApiServer::run() {
     printf("Slot Machine API server starting on %s:%d...\n", host_.c_str(), port_);
-    printf("Frontend: http://%s:%d\n", host_.c_str(), port_);
     svr_.listen(host_.c_str(), port_);
 }

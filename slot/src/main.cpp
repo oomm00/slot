@@ -23,8 +23,6 @@ int main() {
 
     ApplicationController app;
     app.initialise("data");
-
-    // Try loading existing data; ignore if none exists.
     app.loadSystem();
 
     // Seed admin user if no admin exists
@@ -39,26 +37,45 @@ int main() {
         std::cout << "[seed] Admin user created: admin / admin123\n";
     }
 
+    // ── Address config ──────────────────────────────────────────────
+    // Railway uses PORT, traditional env uses API_PORT
     auto host = std::getenv("API_HOST");
-    auto portStr = std::getenv("API_PORT");
+    auto portStr = std::getenv("PORT");
+    if (!portStr) portStr = std::getenv("API_PORT");
     auto h = host ? std::string(host) : "0.0.0.0";
     auto p = portStr ? std::stoi(portStr) : 8080;
 
     ApiServer server(app, h, p);
-
-    // ── Production static file serving ──────────────────────────────
-    // Mount the built frontend for single-binary deployment.
-    // During development, use `npm run dev` in slot-ui/ instead.
     auto& svr = server.getServer();
 
-    // Try to mount the dist directory; skip if it doesn't exist.
-    if (fs::exists("slot-ui/dist")) {
-        svr.set_mount_point("/", "slot-ui/dist");
-        auto indexHtml = readFile("slot-ui/dist/index.html");
-        if (!indexHtml.empty()) {
-            svr.Get(".*", [indexHtml](const httplib::Request&, httplib::Response& res) {
-                res.set_content(indexHtml, "text/html");
-            });
+    // ── CORS headers (required when frontend is on Vercel) ──────────
+    svr.set_default_headers({
+        {"Access-Control-Allow-Origin", "*"},
+        {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
+        {"Access-Control-Allow-Headers", "Content-Type, Authorization"},
+    });
+    svr.Options(R"(.*)", [](const httplib::Request&, httplib::Response& res) {
+        res.status = 204;
+    });
+
+    // ── Production static file serving ──────────────────────────────
+    // The frontend build (slot-ui/dist) is copied alongside the binary
+    // by the Dockerfile.  In dev, run `npm run dev` from slot-ui/.
+    for (const auto& distPath : {"slot-ui/dist", "../slot-ui/dist"}) {
+        if (fs::exists(distPath)) {
+            svr.set_mount_point("/", distPath);
+            auto indexHtml = readFile(std::string(distPath) + "/index.html");
+            if (!indexHtml.empty()) {
+                svr.Get(".*", [indexHtml](const httplib::Request& req,
+                                          httplib::Response& res) {
+                    // Only catch non-API, non-static routes
+                    if (req.path.find("/api/") == 0) return;
+                    if (req.path.find(".") != std::string::npos) return;
+                    res.set_content(indexHtml, "text/html");
+                });
+            }
+            std::cout << "[static] Mounted " << distPath << "\n";
+            break;
         }
     }
 
