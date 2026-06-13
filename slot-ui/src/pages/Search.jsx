@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { searchPlayers, searchGame, searchBet, searchByDateRange } from '../services/searchService';
+import api from '../services/api';
 import DataTable from '../components/DataTable';
 import { fmt } from '../utils/format';
 
@@ -32,13 +33,9 @@ export default function Search() {
           // Always use client-side case-insensitive search for players
           // Backend search is case-sensitive and compiled server doesn't have the fix
           try {
-            const response = await fetch('/api/players', {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
-              }
-            });
-            if (response.ok) {
-              const allPlayers = await response.json();
+            const response = await api.get('/players');
+            if (response.status === 200) {
+              const allPlayers = response.data;
               const searchLower = query.toLowerCase().trim();
               data = allPlayers.filter(p => 
                 p.name?.toLowerCase().includes(searchLower) ||

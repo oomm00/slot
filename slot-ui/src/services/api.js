@@ -1,9 +1,10 @@
 import axios from 'axios';
 
 // In dev, Vite proxy handles /api -> localhost:8080
-// In production (Vercel), set VITE_API_URL to your Railway backend URL
+// In production (Vercel), set VITE_API_URL to your Railway backend URL (no trailing /api)
+const API_BASE = import.meta.env.VITE_API_URL || '';
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+  baseURL: API_BASE + '/api',
 });
 
 api.interceptors.request.use((config) => {
