@@ -1,6 +1,6 @@
 #include<iostream>
 #include <chrono>
-#include "strategyreport.h"
+#include "StrategyReport.h"
 using namespace std;
 
 strategyreport::strategyreport(
