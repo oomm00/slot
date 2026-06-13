@@ -11,3 +11,6 @@ export const getGameHistory = (playerId) =>
 
 export const getBetTypes = () =>
   api.get('/bet-types').then((r) => r.data);
+
+export const getBettingAdvice = (playerId, betAmount) =>
+  api.post('/betting/advise', { playerId, betAmount }).then((r) => r.data);

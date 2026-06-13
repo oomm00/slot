@@ -2,6 +2,7 @@
 #include "JsonHelper.h"
 #include "PasswordHasher.h"
 #include "StrategyLab.h"
+#include "BettingAdvisor.h"
 #include "WeightedReel.h"
 
 #include <sstream>
@@ -613,6 +614,216 @@ void ApiServer::registerRoutes() {
         }
     });
 
+    // ── Betting Advisor ─────────────────────────────────────────────
+    svr_.Get("/api/analytics/advisor", [this, makeLab](const httplib::Request& req, httplib::Response& res) {
+        string pid, role;
+        if (!requireAuth(req, res, pid, role)) return;
+        try {
+            auto gv = [&](const string& key, const string& def) -> string {
+                auto v = req.get_param_value(key);
+                return v.empty() ? def : v;
+            };
+            double bal = std::stod(gv("balance", "1000"));
+            double bet = std::stod(gv("bet", "10"));
+            size_t rounds = std::stoul(gv("rounds", "100"));
+            double lambdaOverride = -1.0;
+            if (req.has_param("lambda")) lambdaOverride = std::stod(gv("lambda", "-1"));
+
+            // Build advisor with same symbol probabilities
+            BettingAdvisor adv;
+            auto w = WeightedReel::defaultWeights();
+            int total = 0;
+            for (auto& [s, wt] : w) total += wt;
+            std::unordered_map<std::string, double> probs;
+            for (auto& [s, wt] : w) probs[s] = static_cast<double>(wt) / total;
+            adv.setSymbolProbabilities(probs);
+
+            // Get player bet history for risk profiling
+            auto playerBets = app_.getBettingEngine().getPlayerBets(pid);
+
+            auto rec = adv.getRecommendation(playerBets, bal, bet, rounds, lambdaOverride);
+
+            json j;
+            j["usedPlayerHistory"] = rec.usedPlayerHistory;
+
+            // Risk profile
+            j["riskProfile"] = {
+                {"lambda", rec.riskProfile.lambda},
+                {"recentWinRate", rec.riskProfile.recentWinRate},
+                {"streak", rec.riskProfile.streak},
+                {"balanceTrend", rec.riskProfile.balanceTrend},
+                {"behaviorLabel", rec.riskProfile.behaviorLabel},
+                {"description", rec.riskProfile.description}
+            };
+
+            // Top pick
+            j["topPick"] = {
+                {"label", rec.topPick.label},
+                {"betType", rec.topPick.betType},
+                {"symbol", rec.topPick.symbol},
+                {"winProb", rec.topPick.winProb},
+                {"payoutMultiplier", rec.topPick.payoutMultiplier},
+                {"expectedValue", rec.topPick.expectedValue},
+                {"variance", rec.topPick.variance},
+                {"bustProb", rec.topPick.bustProb},
+                {"score", rec.topPick.score}
+            };
+
+            j["reason"] = rec.reason;
+
+            // Ranked candidates (top 20)
+            j["rankedCandidates"] = json::array();
+            int count = 0;
+            for (auto& c : rec.rankedCandidates) {
+                if (count++ >= 20) break;
+                j["rankedCandidates"].push_back({
+                    {"label", c.label},
+                    {"betType", c.betType},
+                    {"symbol", c.symbol},
+                    {"winProb", c.winProb},
+                    {"payoutMultiplier", c.payoutMultiplier},
+                    {"expectedValue", c.expectedValue},
+                    {"variance", c.variance},
+                    {"bustProb", c.bustProb},
+                    {"score", c.score}
+                });
+            }
+
+            res.set_content(j.dump(), "application/json");
+        } catch (const exception& e) {
+            res.status = 400;
+            res.set_content(jsonError(string("Invalid parameters: ") + e.what()), "application/json");
+        }
+    });
+
+    // ── Betting Advisor (POST endpoint with playerId in body) ─────────
+
+    svr_.Post("/api/betting/advise", [this, makeLab](const httplib::Request& req, httplib::Response& res) {
+        string pid, role;
+        if (!requireAuth(req, res, pid, role)) return;
+        try {
+            auto body = json::parse(req.body);
+            string playerId = body.value("playerId", pid);
+            double betAmount = body.value("betAmount", 10.0);
+
+            // Require player to query their own data or be admin
+            if (playerId != pid && role != "admin") {
+                res.status = 403;
+                res.set_content(jsonError("Access denied"), "application/json");
+                return;
+            }
+
+            // Get player's current balance
+            const player* p = app_.getPlayerById(playerId);
+            if (!p) {
+                res.status = 404;
+                res.set_content(jsonError("Player not found"), "application/json");
+                return;
+            }
+            double currentBalance = p->getbal();
+
+            // Build advisor with weighted symbol probabilities
+            BettingAdvisor adv;
+            auto w = WeightedReel::defaultWeights();
+            int total = 0;
+            for (auto& [s, wt] : w) total += wt;
+            std::unordered_map<std::string, double> probs;
+            for (auto& [s, wt] : w) probs[s] = static_cast<double>(wt) / total;
+            adv.setSymbolProbabilities(probs);
+
+            // Get player bet history for risk profiling
+            auto playerBets = app_.getBettingEngine().getPlayerBets(playerId);
+
+            // Get recommendation (using 10 rounds for DP, no lambda override)
+            auto rec = adv.getRecommendation(playerBets, currentBalance, betAmount, 10, -1.0);
+
+            json j;
+            j["usedPlayerHistory"] = rec.usedPlayerHistory;
+
+            // Risk profile
+            j["riskProfile"] = {
+                {"lambda", rec.riskProfile.lambda},
+                {"recentWinRate", rec.riskProfile.recentWinRate},
+                {"streak", rec.riskProfile.streak},
+                {"balanceTrend", rec.riskProfile.balanceTrend},
+                {"behaviorLabel", rec.riskProfile.behaviorLabel},
+                {"description", rec.riskProfile.description}
+            };
+
+            // Recommendation (top pick)
+            j["recommendation"] = {
+                {"betType", rec.topPick.betType},
+                {"symbol", rec.topPick.symbol},
+                {"label", rec.topPick.label},
+                {"reason", rec.reason}
+            };
+
+            j["reason"] = rec.reason;
+
+            // Ranked list (all candidates)
+            j["ranked"] = json::array();
+            for (auto& c : rec.rankedCandidates) {
+                j["ranked"].push_back({
+                    {"label", c.label},
+                    {"betType", c.betType},
+                    {"symbol", c.symbol},
+                    {"p_win", c.winProb},
+                    {"multiplier", c.payoutMultiplier},
+                    {"EV", c.expectedValue},
+                    {"bustProbability", c.bustProb},
+                    {"variance", c.variance},
+                    {"score", c.score}
+                });
+            }
+
+            // DP Table: compute for top recommendation
+            if (!rec.rankedCandidates.empty()) {
+                auto& top = rec.topPick;
+                // Run a simple 1D DP for visualization
+                size_t N = 10;
+                size_t M = 50;
+                double bucketSize = currentBalance / 25.0;
+                
+                std::vector<std::vector<double>> dpTable(N + 1, std::vector<double>(M, 0.0));
+                size_t initBucket = std::min(static_cast<size_t>(currentBalance / bucketSize), M - 1);
+                dpTable[0][initBucket] = 1.0;
+
+                double pWin = top.winProb;
+                double pLose = 1.0 - pWin;
+
+                for (size_t round = 0; round < N; ++round) {
+                    for (size_t b = 0; b < M; ++b) {
+                        double prob = dpTable[round][b];
+                        if (prob < 1e-9) continue;
+
+                        if (b == 0) {
+                            dpTable[round + 1][0] += prob;
+                        } else {
+                            double balance = b * bucketSize;
+                            double newBalanceWin = balance + betAmount * (top.payoutMultiplier - 1.0);
+                            size_t winBucket = std::min(static_cast<size_t>(newBalanceWin / bucketSize), M - 1);
+                            dpTable[round + 1][winBucket] += prob * pWin;
+
+                            double newBalanceLose = balance - betAmount;
+                            size_t loseBucket = (newBalanceLose > 0) ? std::min(static_cast<size_t>(newBalanceLose / bucketSize), M - 1) : 0;
+                            dpTable[round + 1][loseBucket] += prob * pLose;
+                        }
+                    }
+                }
+
+                j["dpTable"] = dpTable;
+            }
+
+            res.set_content(j.dump(), "application/json");
+        } catch (const json::exception& e) {
+            res.status = 400;
+            res.set_content(jsonError(string("Invalid JSON: ") + e.what()), "application/json");
+        } catch (const exception& e) {
+            res.status = 500;
+            res.set_content(jsonError(string("Internal error: ") + e.what()), "application/json");
+        }
+    });
+
     // ── Fraud ─────────────────────────────────────────────────────
 
     svr_.Get(R"(/api/fraud/player/(\w+))", [this](const httplib::Request& req, httplib::Response& res) {
@@ -764,9 +975,14 @@ void ApiServer::registerRoutes() {
     svr_.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
         res.set_content(R"({"status":"ok"})", "application/json");
     });
+
+    // ── Static file serving for built frontend ─────────────────────
+    // Serve ../slot-ui/dist/ at root for non-API routes
+    svr_.set_mount_point("/", "../slot-ui/dist");
 }
 
 void ApiServer::run() {
     printf("Slot Machine API server starting on %s:%d...\n", host_.c_str(), port_);
+    printf("Frontend: http://%s:%d\n", host_.c_str(), port_);
     svr_.listen(host_.c_str(), port_);
 }

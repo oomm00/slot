@@ -20,3 +20,6 @@ export const getStrategyComparison = (params) =>
 
 export const getStrategyRecommendation = (params) =>
   api.get('/analytics/recommend', { params }).then((r) => r.data);
+
+export const getAdvisorRecommendation = (params) =>
+  api.get('/analytics/advisor', { params }).then((r) => r.data);

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useApp } from '../context/AppContext';
 import {
   getSystemAnalytics, getDistribution, getRiskMetrics,
-  getStrategyComparison, getStrategyRecommendation
+  getStrategyComparison, getStrategyRecommendation, getAdvisorRecommendation
 } from '../services/analyticsService';
 import api from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -98,10 +99,12 @@ function LineChart({ data, label, color = '#06b6d4', height = 180, width = 500 }
 }
 
 export default function Analytics() {
+  const { user } = useApp();
   const [sys, setSys] = useState(null);
   const [tab, setTab] = useState('dashboard');
   const [loading, setLoading] = useState(true);
-  const [params, setParams] = useState({ balance: 1000, bet: 10, rounds: 50, type: 'ANY_PAIR', riskTolerance: 0.15 });
+  const userBalance = user?.balance ?? 1000;
+  const [params, setParams] = useState({ balance: Math.min(1000, userBalance), bet: 10, rounds: 50, type: 'ANY_PAIR' });
 
   const [dist, setDist] = useState(null);
   const [risk, setRisk] = useState(null);
@@ -109,6 +112,7 @@ export default function Analytics() {
   const [recommendation, setRecommendation] = useState(null);
   const [strategies, setStrategies] = useState(null);
   const [symbolProbs, setSymbolProbs] = useState(null);
+  const [advisor, setAdvisor] = useState(null);
 
   const defaultWeights = [
     { sym: 'CHERRY', weight: 30, color: SYMBOL_COLORS.CHERRY },
@@ -123,7 +127,7 @@ export default function Analytics() {
 
   const fetchAll = () => {
     setLoading(true);
-    const p = { balance: params.balance, bet: params.bet, rounds: params.rounds, type: params.type, riskTolerance: params.riskTolerance };
+    const p = { balance: params.balance, bet: params.bet, rounds: params.rounds, type: params.type };
     Promise.all([
       getSystemAnalytics().then(setSys).catch(() => {}),
       getDistribution(p).then(setDist).catch(() => {}),
@@ -131,6 +135,8 @@ export default function Analytics() {
       getStrategyComparison(p).then(setComparison).catch(() => {}),
       getStrategyRecommendation(p).then(r => setRecommendation(r)).catch(() => {}),
       api.get('/analytics/strategies', { params: p }).then(r => setStrategies(r.data)).catch(() => {}),
+      // Use GET endpoint that exists in compiled server
+      getAdvisorRecommendation(p).then(setAdvisor).catch(() => {}),
     ]).finally(() => setLoading(false));
   };
 
@@ -138,6 +144,7 @@ export default function Analytics() {
 
   const tabs = [
     { key: 'dashboard', label: 'Dashboard' },
+    { key: 'advisor', label: 'Advisor' },
     { key: 'strategies', label: 'Strategies' },
     { key: 'compare', label: 'Compare' },
     { key: 'distribution', label: 'Distribution' },
@@ -148,9 +155,24 @@ export default function Analytics() {
       <h1 className="text-2xl font-bold">Betting Analyzer & Strategy Lab</h1>
 
       <div className="bg-slate-800 rounded-xl border border-slate-600 p-4 grid grid-cols-2 md:grid-cols-5 lg:grid-cols-7 gap-4">
-        <Slider label="Balance" value={params.balance} onChange={v => setParams(p => ({ ...p, balance: v }))} min={100} max={10000} step={100} />
-        <Slider label="Bet" value={params.bet} onChange={v => setParams(p => ({ ...p, bet: v }))} min={1} max={500} step={1} />
-        <Slider label="Rounds" value={params.rounds} onChange={v => setParams(p => ({ ...p, rounds: v }))} min={10} max={500} step={10} />
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-slate-300">Balance: <span className="font-mono text-cyan-300">{params.balance}</span></span>
+          <input type="number" min={100} max={userBalance} step={100} value={params.balance}
+            onChange={e => setParams(p => ({ ...p, balance: Math.min(Number(e.target.value), userBalance) }))}
+            className="bg-slate-700 border border-slate-500 rounded px-2 py-1 text-sm w-full" />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-slate-300">Bet: <span className="font-mono text-cyan-300">{params.bet}</span></span>
+          <input type="number" min={1} max={500} step={1} value={params.bet}
+            onChange={e => setParams(p => ({ ...p, bet: Number(e.target.value) }))}
+            className="bg-slate-700 border border-slate-500 rounded px-2 py-1 text-sm w-full" />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-slate-300">Rounds: <span className="font-mono text-cyan-300">{params.rounds}</span></span>
+          <input type="number" min={10} max={500} step={10} value={params.rounds}
+            onChange={e => setParams(p => ({ ...p, rounds: Number(e.target.value) }))}
+            className="bg-slate-700 border border-slate-500 rounded px-2 py-1 text-sm w-full" />
+        </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-slate-300">Bet Type</span>
           <select value={params.type} onChange={e => setParams(p => ({ ...p, type: e.target.value }))}
@@ -161,17 +183,6 @@ export default function Analytics() {
             <option value="PAIR">Pair Prediction (8x)</option>
             <option value="TRIPLE_SYMBOL">Triple Symbol (30x)</option>
             <option value="EXACT_PREDICTION">Exact (50x)</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-slate-300">Risk Tol.</span>
-          <select value={params.riskTolerance} onChange={e => setParams(p => ({ ...p, riskTolerance: Number(e.target.value) }))}
-            className="bg-slate-700 border border-slate-500 rounded px-2 py-1 text-sm">
-            <option value={0.05}>5%</option>
-            <option value={0.1}>10%</option>
-            <option value={0.15}>15%</option>
-            <option value={0.25}>25%</option>
-            <option value={0.5}>50%</option>
           </select>
         </label>
         <button onClick={fetchAll} disabled={loading}
@@ -267,6 +278,98 @@ export default function Analytics() {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── ADVISOR ── */}
+      {!loading && tab === 'advisor' && (
+        <div className="space-y-4">
+          {advisor ? (
+            <>
+              {/* Risk Profile Card */}
+              <div className="bg-slate-800 rounded-xl border border-slate-600 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-lg font-semibold">Risk Profile</h2>
+                  <span className="text-xs text-slate-500">
+                    {advisor.usedPlayerHistory ? 'from your betting history' : 'default (no history)'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm mb-3">
+                  <StatBox label="Behavior" value={advisor.riskProfile.behaviorLabel} color="text-cyan-400" />
+                  <StatBox label="Lambda (\u03BB)" value={advisor.riskProfile.lambda?.toFixed(3)} color="text-amber-400" />
+                  <StatBox label="Recent Win Rate" value={`${(advisor.riskProfile.recentWinRate * 100).toFixed(0)}%`}
+                    color={advisor.riskProfile.recentWinRate >= 0.5 ? 'text-green-400' : 'text-red-400'} />
+                  <StatBox label="Streak"
+                    value={advisor.riskProfile.streak > 0 ? `+${advisor.riskProfile.streak}` : String(advisor.riskProfile.streak)}
+                    color={advisor.riskProfile.streak >= 0 ? 'text-green-400' : 'text-red-400'} />
+                  <StatBox label="Balance Trend" value={advisor.riskProfile.balanceTrend?.toFixed(1)}
+                    color={advisor.riskProfile.balanceTrend >= 0 ? 'text-green-400' : 'text-red-400'} />
+                </div>
+                <p className="text-sm text-slate-400 italic">{advisor.riskProfile.description}</p>
+              </div>
+
+              {/* Top Pick */}
+              <div className="bg-slate-900 rounded-xl border-2 border-cyan-500/50 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-bold bg-cyan-600 px-2 py-0.5 rounded-full">TOP PICK</span>
+                  <h3 className="text-lg font-bold text-cyan-300">{advisor.topPick.label}</h3>
+                </div>
+                <p className="text-sm text-slate-300 mb-3 leading-relaxed">{advisor.reason}</p>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+                  <StatBox label="Score" value={advisor.topPick.score?.toFixed(4)} color="text-cyan-300" />
+                  <StatBox label="Expected Value" value={`${advisor.topPick.expectedValue?.toFixed(4)}x`}
+                    color={advisor.topPick.expectedValue >= 1 ? 'text-green-400' : 'text-red-400'} />
+                  <StatBox label="Win Prob" value={`${(advisor.topPick.winProb * 100).toFixed(2)}%`} color="text-green-400" />
+                  <StatBox label="Bust Prob" value={`${(advisor.topPick.bustProb * 100).toFixed(2)}%`}
+                    color={advisor.topPick.bustProb < 0.1 ? 'text-green-400' : 'text-red-400'} />
+                  <StatBox label="Variance" value={advisor.topPick.variance?.toFixed(2)} color="text-yellow-400" />
+                </div>
+              </div>
+
+              {/* Full Ranked Table */}
+              <div className="bg-slate-800 rounded-xl border border-slate-600 p-4">
+                <h3 className="font-semibold mb-3">Ranked Recommendations (sorted by score)</h3>
+                <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-slate-800">
+                      <tr className="text-slate-400 border-b border-slate-600">
+                        <th className="text-left py-2">#</th>
+                        <th className="text-left py-2">Bet</th>
+                        <th className="text-right py-2">Score</th>
+                        <th className="text-right py-2">EV</th>
+                        <th className="text-right py-2">Win %</th>
+                        <th className="text-right py-2">Bust %</th>
+                        <th className="text-right py-2">Variance</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {advisor.rankedCandidates.map((c, i) => {
+                        const symColor = c.symbol ? SYMBOL_COLORS[c.symbol] : null;
+                        return (
+                          <tr key={i} className={`border-b border-slate-700 ${i === 0 ? 'bg-cyan-900/20' : ''}`}>
+                            <td className="py-1 text-slate-500 font-mono text-xs">{i + 1}</td>
+                            <td className="py-1 flex items-center gap-1">
+                              {symColor && <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: symColor }} />}
+                              <span className={i === 0 ? 'font-semibold text-cyan-300' : ''}>{c.label}</span>
+                            </td>
+                            <td className="py-1 text-right font-mono text-cyan-300">{c.score.toFixed(4)}</td>
+                            <td className={`py-1 text-right font-mono ${c.expectedValue >= 1 ? 'text-green-400' : 'text-red-400'}`}>
+                              {c.expectedValue.toFixed(4)}
+                            </td>
+                            <td className="py-1 text-right font-mono">{(c.winProb * 100).toFixed(2)}</td>
+                            <td className="py-1 text-right font-mono text-red-400">{(c.bustProb * 100).toFixed(2)}</td>
+                            <td className="py-1 text-right font-mono text-yellow-400">{c.variance.toFixed(2)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="text-slate-400 text-sm">Run analysis to see advisor recommendations.</p>
+          )}
         </div>
       )}
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { placeBet, getBetTypes } from '../services/bettingService';
+import { getAdvisorRecommendation } from '../services/analyticsService';
 import SlotMachineDisplay from '../components/SlotMachineDisplay';
 import { fmt } from '../utils/format';
 
@@ -23,8 +24,10 @@ function SymbolPicker({ label, value, onChange }) {
 
 const BET_TYPE_LABELS = {
   EXACT: 'Exact Prediction',
+  EXACT_PREDICTION: 'Exact Prediction',
   TRIPLE_SYMBOL: 'Triple Symbol',
   PAIR: 'Pair Prediction',
+  PAIR_PREDICTION: 'Pair Prediction',
   SYMBOL_APPEARANCE: 'Symbol Appearance',
   ANY_PAIR: 'Any Pair',
   ANY_TRIPLE: 'Any Triple',
@@ -41,6 +44,8 @@ export default function Betting() {
   const [spinning, setSpinning] = useState(false);
   const [balance, setBalance] = useState(user?.balance ?? 0);
   const [recentResults, setRecentResults] = useState([]);
+  const [advice, setAdvice] = useState(null);
+  const [loadingAdvice, setLoadingAdvice] = useState(false);
 
   useEffect(() => {
     getBetTypes().then(setBetTypes).catch(() => {});
@@ -53,6 +58,49 @@ export default function Betting() {
     next[idx] = symbol;
     setPrediction(next);
   };
+
+  const fetchAdvice = async () => {
+    if (!user?.playerId || betAmount <= 0 || !balance) return;
+    setLoadingAdvice(true);
+    try {
+      // Use GET endpoint with query params that exists in older server builds
+      const params = {
+        balance: balance,
+        bet: betAmount,
+        rounds: 10
+      };
+      const adv = await getAdvisorRecommendation(params);
+      
+      // Map API response to expected format
+      const mappedAdvice = {
+        riskProfile: adv.riskProfile,
+        recommendation: adv.topPick, // Map topPick to recommendation
+        ranked: adv.rankedCandidates?.map(c => ({
+          label: c.label,
+          betType: c.betType,
+          symbol: c.symbol,
+          score: c.score,
+          EV: c.expectedValue, // Map expectedValue to EV
+          p_win: c.winProb, // Map winProb to p_win
+          bustProbability: c.bustProb // Map bustProb to bustProbability
+        })) || [],
+        reason: adv.reason
+      };
+      
+      setAdvice(mappedAdvice);
+    } catch (err) {
+      console.error('Failed to fetch advice:', err);
+      setAdvice(null);
+    } finally {
+      setLoadingAdvice(false);
+    }
+  };
+
+  useEffect(() => {
+    if (betAmount > 0 && user?.playerId && balance > 0) {
+      fetchAdvice();
+    }
+  }, [betAmount, balance]);
 
   const handleSpin = async (e) => {
     e.preventDefault();
@@ -71,6 +119,7 @@ export default function Betting() {
         updateUserBalance(res.balanceAfter);
         setSpinning(false);
         setRecentResults((prev) => [res, ...prev].slice(0, 10));
+        fetchAdvice(); // Refresh advice after bet
       }, 800);
     } catch (err) {
       setError(err.message);
@@ -81,6 +130,7 @@ export default function Betting() {
   const renderPredictionInputs = () => {
     switch (selectedType) {
       case 'EXACT':
+      case 'EXACT_PREDICTION':
         return (
           <div className="grid grid-cols-3 gap-3">
             <SymbolPicker label="Reel 1" value={prediction[0] || ''} onChange={(v) => updatePrediction(0, v)} />
@@ -90,6 +140,7 @@ export default function Betting() {
         );
       case 'TRIPLE_SYMBOL':
       case 'PAIR':
+      case 'PAIR_PREDICTION':
       case 'SYMBOL_APPEARANCE':
         return (
           <SymbolPicker label="Pick a symbol" value={prediction[0] || ''} onChange={(v) => setPrediction([v])} />
@@ -100,7 +151,7 @@ export default function Betting() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Game</h1>
@@ -112,124 +163,227 @@ export default function Betting() {
         </div>
       </div>
 
-      <form onSubmit={handleSpin} className="bg-gradient-to-br from-slate-800 to-slate-850 rounded-xl border border-slate-600 p-6 space-y-5 shadow-lg">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs text-slate-400 mb-1.5 font-medium">Bet Type</label>
-            <select value={selectedType} onChange={(e) => { setSelectedType(e.target.value); setPrediction([]); }}
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all">
-              <option value="">Select bet type</option>
-              {betTypes.map((t) => (
-                <option key={t.type} value={t.type}>
-                  {BET_TYPE_LABELS[t.type] || t.type} ({t.multiplier}x)
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1.5 font-medium">Bet Amount (Credits)</label>
-            <div className="flex gap-2">
-              <input type="number" min="1" value={betAmount} onChange={(e) => setBetAmount(+e.target.value)}
-                className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all" />
-              <button type="button" onClick={() => setBetAmount(Math.max(1, betAmount - 10))}
-                className="bg-slate-700 hover:bg-slate-600 text-white px-3 rounded-lg text-sm transition-colors">-10</button>
-              <button type="button" onClick={() => setBetAmount(betAmount + 10)}
-                className="bg-slate-700 hover:bg-slate-600 text-white px-3 rounded-lg text-sm transition-colors">+10</button>
-            </div>
-          </div>
-        </div>
-
-        {currentType && (
-          <div className="bg-slate-700/50 rounded-lg px-4 py-2.5 border border-slate-600/50">
-            <p className="text-xs text-slate-400">{currentType.description}</p>
-          </div>
-        )}
-
-        {renderPredictionInputs() && (
-          <div className="border-t border-slate-600/50 pt-4">
-            <p className="text-xs text-slate-400 mb-3 font-medium">Your Prediction</p>
-            {renderPredictionInputs()}
-          </div>
-        )}
-
-        {selectedType === 'ANY_PAIR' || selectedType === 'ANY_TRIPLE' ? (
-          <div className="bg-amber-900/20 border border-amber-700/30 rounded-lg px-4 py-2.5">
-            <p className="text-xs text-amber-300">No prediction needed for this bet type. Any matching symbols will win.</p>
-          </div>
-        ) : null}
-
-        {error && (
-          <div className="bg-red-900/30 border border-red-700/30 rounded-lg px-4 py-2.5">
-            <p className="text-sm text-red-300">{error}</p>
-          </div>
-        )}
-
-        <button type="submit" disabled={spinning || !selectedType || betAmount <= 0}
-          className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:from-slate-700 disabled:to-slate-700 text-white font-bold py-3.5 rounded-xl text-lg transition-all duration-200 shadow-lg disabled:shadow-none disabled:cursor-not-allowed tracking-wide">
-          {spinning ? 'Spinning...' : 'SPIN'}
-        </button>
-      </form>
-
-      {spinning && (
-        <div className="bg-slate-800 rounded-xl border border-slate-600 p-8 shadow-lg">
-          <SlotMachineDisplay spinning />
-        </div>
-      )}
-
-      {result && !spinning && (
-        <div className={`rounded-xl border p-6 space-y-4 shadow-lg ${
-          result.win
-            ? 'bg-gradient-to-br from-green-900/40 to-slate-800 border-green-600/50'
-            : 'bg-gradient-to-br from-red-900/30 to-slate-800 border-red-600/30'
-        }`}>
-          <SlotMachineDisplay symbols={result.symbols} />
-          <div className="text-center space-y-2">
-            <p className={`text-3xl font-bold tracking-tight ${result.win ? 'text-green-400' : 'text-red-400'}`}>
-              {result.win ? 'WIN' : 'NO WIN'}
-            </p>
-            <div className="flex justify-center gap-6 text-sm">
+      <div className="grid lg:grid-cols-3 gap-6">
+        {/* Main Betting Form */}
+        <div className="lg:col-span-2 space-y-6">
+          <form onSubmit={handleSpin} className="bg-gradient-to-br from-slate-800 to-slate-850 rounded-xl border border-slate-600 p-6 space-y-5 shadow-lg">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <p className="text-slate-400 text-xs">Multiplier</p>
-                <p className="text-white font-semibold">x{result.multiplier}</p>
+                <label className="block text-xs text-slate-400 mb-1.5 font-medium">Bet Type</label>
+                <select value={selectedType} onChange={(e) => { setSelectedType(e.target.value); setPrediction([]); }}
+                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all">
+                  <option value="">Select bet type</option>
+                  {betTypes.map((t) => (
+                    <option key={t.type} value={t.type}>
+                      {BET_TYPE_LABELS[t.type] || t.type} ({t.multiplier}x)
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
-                <p className="text-slate-400 text-xs">Bet</p>
-                <p className="text-white font-semibold">{fmt(result.betAmount)}</p>
-              </div>
-              <div>
-                <p className="text-slate-400 text-xs">Payout</p>
-                <p className={`font-semibold ${result.win ? 'text-green-400' : 'text-slate-400'}`}>{fmt(result.payout)}</p>
+                <label className="block text-xs text-slate-400 mb-1.5 font-medium">Bet Amount (Credits)</label>
+                <div className="flex gap-2">
+                  <input type="number" min="1" value={betAmount} onChange={(e) => setBetAmount(+e.target.value)}
+                    className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all" />
+                  <button type="button" onClick={() => setBetAmount(Math.max(1, betAmount - 10))}
+                    className="bg-slate-700 hover:bg-slate-600 text-white px-3 rounded-lg text-sm transition-colors">-10</button>
+                  <button type="button" onClick={() => setBetAmount(betAmount + 10)}
+                    className="bg-slate-700 hover:bg-slate-600 text-white px-3 rounded-lg text-sm transition-colors">+10</button>
+                </div>
               </div>
             </div>
-            <p className="text-sm text-slate-400">Balance: {fmt(result.balanceAfter)} Credits</p>
-            {result.fraudScore > 0 && (
-              <p className="text-xs text-yellow-400">Fraud score: {(result.fraudScore * 100).toFixed(1)}%</p>
+
+            {currentType && (
+              <div className="bg-slate-700/50 rounded-lg px-4 py-2.5 border border-slate-600/50">
+                <p className="text-xs text-slate-400">{currentType.description}</p>
+              </div>
+            )}
+
+            {renderPredictionInputs() && (
+              <div className="border-t border-slate-600/50 pt-4">
+                <p className="text-xs text-slate-400 mb-3 font-medium">Your Prediction</p>
+                {renderPredictionInputs()}
+              </div>
+            )}
+
+            {selectedType === 'ANY_PAIR' || selectedType === 'ANY_TRIPLE' ? (
+              <div className="bg-amber-900/20 border border-amber-700/30 rounded-lg px-4 py-2.5">
+                <p className="text-xs text-amber-300">No prediction needed for this bet type. Any matching symbols will win.</p>
+              </div>
+            ) : null}
+
+            {error && (
+              <div className="bg-red-900/30 border border-red-700/30 rounded-lg px-4 py-2.5">
+                <p className="text-sm text-red-300">{error}</p>
+              </div>
+            )}
+
+            <button type="submit" disabled={spinning || !selectedType || betAmount <= 0}
+              className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:from-slate-700 disabled:to-slate-700 text-white font-bold py-3.5 rounded-xl text-lg transition-all duration-200 shadow-lg disabled:shadow-none disabled:cursor-not-allowed tracking-wide">
+              {spinning ? 'Spinning...' : 'SPIN'}
+            </button>
+          </form>
+
+          {spinning && (
+            <div className="bg-slate-800 rounded-xl border border-slate-600 p-8 shadow-lg">
+              <SlotMachineDisplay spinning />
+            </div>
+          )}
+
+          {result && !spinning && (
+            <div className={`rounded-xl border p-6 space-y-4 shadow-lg ${
+              result.win
+                ? 'bg-gradient-to-br from-green-900/40 to-slate-800 border-green-600/50'
+                : 'bg-gradient-to-br from-red-900/30 to-slate-800 border-red-600/30'
+            }`}>
+              <SlotMachineDisplay symbols={result.symbols} />
+              <div className="text-center space-y-2">
+                <p className={`text-3xl font-bold tracking-tight ${result.win ? 'text-green-400' : 'text-red-400'}`}>
+                  {result.win ? 'WIN' : 'NO WIN'}
+                </p>
+                <div className="flex justify-center gap-6 text-sm">
+                  <div>
+                    <p className="text-slate-400 text-xs">Multiplier</p>
+                    <p className="text-white font-semibold">x{result.multiplier}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400 text-xs">Bet</p>
+                    <p className="text-white font-semibold">{fmt(result.betAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400 text-xs">Payout</p>
+                    <p className={`font-semibold ${result.win ? 'text-green-400' : 'text-slate-400'}`}>{fmt(result.payout)}</p>
+                  </div>
+                </div>
+                <p className="text-sm text-slate-400">Balance: {fmt(result.balanceAfter)} Credits</p>
+                {result.fraudScore > 0 && (
+                  <p className="text-xs text-yellow-400">Fraud score: {(result.fraudScore * 100).toFixed(1)}%</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {recentResults.length > 0 && (
+            <div className="bg-slate-800 rounded-xl border border-slate-600 p-4">
+              <h2 className="text-sm font-semibold text-slate-300 mb-3">Recent Spins</h2>
+              <div className="space-y-1.5">
+                {recentResults.map((r, i) => (
+                  <div key={i} className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm ${
+                    r.win ? 'bg-green-900/20' : 'bg-slate-700/30'
+                  }`}>
+                    <div className="flex items-center gap-3">
+                      <span className={`w-2 h-2 rounded-full ${r.win ? 'bg-green-400' : 'bg-red-400'}`} />
+                      <span className="text-slate-300">{r.symbols?.join(' ')}</span>
+                    </div>
+                    <div className="flex items-center gap-4 text-xs">
+                      <span className="text-slate-400">{BET_TYPE_LABELS[r.betType] || r.betType}</span>
+                      <span className={r.win ? 'text-green-400 font-medium' : 'text-slate-400'}>{fmt(r.payout)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Advisor Sidebar */}
+        <div className="space-y-4">
+          <div className="bg-gradient-to-br from-cyan-900/20 to-slate-800 rounded-xl border border-cyan-600/30 p-4 sticky top-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold text-cyan-300">Betting Advisor</h2>
+              <button onClick={fetchAdvice} disabled={loadingAdvice}
+                className="text-xs bg-cyan-600/30 hover:bg-cyan-600/50 px-2 py-1 rounded disabled:opacity-50">
+                {loadingAdvice ? '...' : 'Refresh'}
+              </button>
+            </div>
+
+            {loadingAdvice && (
+              <div className="text-center py-4 text-slate-400 text-sm">Loading advice...</div>
+            )}
+
+            {!loadingAdvice && advice && (
+              <div className="space-y-4">
+                {/* Risk Profile */}
+                <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-600/30">
+                  <p className="text-xs text-slate-400 mb-2">Risk Profile</p>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Behavior:</span>
+                      <span className="font-semibold text-cyan-300">{advice.riskProfile.behaviorLabel}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Lambda (λ):</span>
+                      <span className="font-mono text-amber-300">{advice.riskProfile.lambda?.toFixed(3)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Streak:</span>
+                      <span className={`font-mono ${advice.riskProfile.streak >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {advice.riskProfile.streak > 0 ? '+' : ''}{advice.riskProfile.streak}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-2 italic leading-relaxed">{advice.riskProfile.description}</p>
+                </div>
+
+                {/* Top Recommendation */}
+                {advice.recommendation && (
+                  <div className="bg-gradient-to-br from-cyan-800/30 to-slate-800/50 rounded-lg p-3 border border-cyan-500/40">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs font-bold bg-cyan-600 px-2 py-0.5 rounded-full">TOP PICK</span>
+                    </div>
+                    <p className="text-sm font-semibold text-cyan-200 mb-1">
+                      {BET_TYPE_LABELS[advice.recommendation.betType] || advice.recommendation.label}
+                      {advice.recommendation.symbol && ` (${advice.recommendation.symbol})`}
+                    </p>
+                    <p className="text-xs text-slate-300 leading-relaxed">{advice.reason}</p>
+                  </div>
+                )}
+
+                {/* Top 5 Ranked */}
+                <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-600/30">
+                  <p className="text-xs text-slate-400 mb-2">Top Recommendations</p>
+                  <div className="space-y-1.5">
+                    {advice.ranked?.slice(0, 5).map((c, i) => (
+                      <div key={i} className={`text-xs p-2 rounded ${i === 0 ? 'bg-cyan-900/30 border border-cyan-600/20' : 'bg-slate-700/30'}`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-medium text-slate-200">{c.label}</span>
+                          <span className="font-mono text-cyan-300 text-[10px]">{c.score?.toFixed(3)}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1 text-[10px]">
+                          <div>
+                            <span className="text-slate-500">EV:</span>
+                            <span className={`ml-1 font-mono ${c.EV >= 1 ? 'text-green-400' : 'text-red-400'}`}>
+                              {c.EV?.toFixed(3)}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500">Win:</span>
+                            <span className="ml-1 font-mono text-slate-300">{(c.p_win * 100).toFixed(1)}%</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500">Bust:</span>
+                            <span className="ml-1 font-mono text-red-400">{(c.bustProbability * 100).toFixed(1)}%</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-slate-500 text-center">
+                  Recommendations update based on your betting history and current balance
+                </p>
+              </div>
+            )}
+
+            {!loadingAdvice && !advice && (
+              <div className="text-center py-4 text-slate-400 text-sm">
+                Set a bet amount to get recommendations
+              </div>
             )}
           </div>
         </div>
-      )}
-
-      {recentResults.length > 0 && (
-        <div className="bg-slate-800 rounded-xl border border-slate-600 p-4">
-          <h2 className="text-sm font-semibold text-slate-300 mb-3">Recent Spins</h2>
-          <div className="space-y-1.5">
-            {recentResults.map((r, i) => (
-              <div key={i} className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm ${
-                r.win ? 'bg-green-900/20' : 'bg-slate-700/30'
-              }`}>
-                <div className="flex items-center gap-3">
-                  <span className={`w-2 h-2 rounded-full ${r.win ? 'bg-green-400' : 'bg-red-400'}`} />
-                  <span className="text-slate-300">{r.symbols?.join(' ')}</span>
-                </div>
-                <div className="flex items-center gap-4 text-xs">
-                  <span className="text-slate-400">{BET_TYPE_LABELS[r.betType] || r.betType}</span>
-                  <span className={r.win ? 'text-green-400 font-medium' : 'text-slate-400'}>{fmt(r.payout)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

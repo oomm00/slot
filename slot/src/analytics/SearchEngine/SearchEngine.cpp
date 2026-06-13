@@ -1,6 +1,7 @@
 #include "SearchEngine.h"
 
 #include <algorithm>
+#include <cctype>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -96,11 +97,22 @@ std::vector<player> SearchEngine::searchPlayerByName(
     const std::string& namePrefix) {
     std::vector<player> result;
     auto all = pm_.getAllPlayers();
+    
+    // Convert search prefix to lowercase
+    std::string lowerPrefix = namePrefix;
+    std::transform(lowerPrefix.begin(), lowerPrefix.end(), lowerPrefix.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    
     for (const auto& p : all) {
         std::string pname = p.getname();
-        // Prefix match
-        if (pname.size() >= namePrefix.size() &&
-            pname.compare(0, namePrefix.size(), namePrefix) == 0) {
+        // Convert player name to lowercase
+        std::string lowerName = pname;
+        std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        
+        // Prefix match (case-insensitive)
+        if (lowerName.size() >= lowerPrefix.size() &&
+            lowerName.compare(0, lowerPrefix.size(), lowerPrefix) == 0) {
             result.push_back(p);
         }
     }

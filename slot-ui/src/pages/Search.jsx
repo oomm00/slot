@@ -28,7 +28,31 @@ export default function Search() {
     try {
       let data;
       switch (tab) {
-        case 'players': data = await searchPlayers(query); break;
+        case 'players': 
+          // Always use client-side case-insensitive search for players
+          // Backend search is case-sensitive and compiled server doesn't have the fix
+          try {
+            const response = await fetch('/api/players', {
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+              }
+            });
+            if (response.ok) {
+              const allPlayers = await response.json();
+              const searchLower = query.toLowerCase().trim();
+              data = allPlayers.filter(p => 
+                p.name?.toLowerCase().includes(searchLower) ||
+                p.username?.toLowerCase().includes(searchLower) ||
+                p.playerId?.toLowerCase().includes(searchLower)
+              );
+            } else {
+              throw new Error('Failed to fetch players');
+            }
+          } catch (err) {
+            setError('Failed to search players: ' + err.message);
+            data = [];
+          }
+          break;
         case 'game': data = [await searchGame(query)]; break;
         case 'bet': data = [await searchBet(query)]; break;
         case 'date':
@@ -37,7 +61,10 @@ export default function Search() {
           break;
       }
       setResults(data);
-    } catch (err) { setError(err.message); }
+    } catch (err) { 
+      setError(err.message);
+      setResults([]);
+    }
     setLoading(false);
   };
 
