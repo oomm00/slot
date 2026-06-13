@@ -4,9 +4,10 @@
 #include <unordered_map>
 #include <vector>
 
+#include "Heap.h"
 #include "Player.h"
 
-/// Ranks players by multiple performance metrics using sorted index vectors.
+/// Ranks players by multiple performance metrics.
 ///
 /// ── Data structures ─────────────────────────────────────────────────
 ///   players_              vector<player>           primary storage
@@ -15,28 +16,33 @@
 ///
 /// ── Complexity ──────────────────────────────────────────────────────
 ///   update               O(n log n)  — full sort for each of 5 categories
-///   getTopBy* (top-K)    O(k)        — slice first k from sorted index
+///   getTopBy* (top-K)    O(n log k)  — heap-based top-K via heap_top_k()
 ///   getRankedPlayer      O(1)        — direct index into sortedByBalance_
 ///   getPlayerRank        O(log n)    — binary search on sortedByBalance_
 ///   getPercentile        O(1)        — after rank is known
 ///   size                 O(1)
 ///
 /// ── DAA justification ───────────────────────────────────────────────
-/// Sorted arrays were chosen over two alternatives:
-///   1. `std::multiset` (balanced BST) — O(log n) insert but O(n) rank lookup
-///      (no random-access iterator), which is unacceptable for getRankedPlayer.
-///   2. `std::priority_queue` (max-heap) — O(k log n) top-K extraction, but
-///      no support for rank / percentile queries at all.
+/// Top-K queries use **heap selection** (MinHeap / heap_top_k) instead of
+/// a full sort or a sorted-vector slice.  The heap approach builds a
+/// min-heap of size K in O(K), then processes the remaining N−K elements
+/// in O((N−K) log K) = O(N log K), which is asymptotically optimal for
+/// top-K when K ≪ N.  Rank and percentile queries still rely on fully
+/// sorted index vectors (built by update()), since they need the complete
+/// ordering.
 ///
-/// Sorted vectors offer O(k) top-K via direct indexing, O(log n) rank via
-/// binary search, and O(1) ranking by position — the best fit for our
-/// read-heavy query pattern.
+/// Rejected alternatives:
+///   1. `std::multiset` (balanced BST) — O(log n) insert but O(n) rank
+///      lookup (no random-access iterator).
+///   2. `std::priority_queue` (max-heap) — O(k log n) top-K extraction
+///      but no support for rank / percentile queries.
+///
 class Leaderboard {
 public:
     /// Replace all player data and rebuild every sorted index.
     void update(const std::vector<player>& players);
 
-    // ── Top-K queries (O(k)) ──────────────────────────────────────────
+    // ── Top-K queries (O(n log k)) ─────────────────────────────────────
 
     /// Global top players (by balance).
     std::vector<player> getTopPlayers(size_t n) const;
@@ -87,8 +93,4 @@ private:
 
     // ── Internals ──────────────────────────────────────────────────
     void rebuildAll();
-
-    /// Top-K helper: copy first `n` elements from `sortedIdx` into players.
-    std::vector<player> topN(const std::vector<size_t>& sortedIdx,
-                             size_t n) const;
 };

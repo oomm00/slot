@@ -11,33 +11,60 @@ void Leaderboard::update(const std::vector<player>& players) {
     rebuildAll();
 }
 
-// ─── Top-K queries ────────────────────────────────────────────────────
+// ─── Top-K queries (heap-based, O(n log k)) ───────────────────────────
 
 std::vector<player> Leaderboard::getTopPlayers(size_t n) const {
-    return topN(sortedByBalance_, n);
+    return getTopByBalance(n);
 }
 
 std::vector<player> Leaderboard::getTopByBalance(size_t n) const {
-    return topN(sortedByBalance_, n);
+    return heap_top_k(players_, n,
+        [](const player& a, const player& b) {
+            double va = a.getbal(), vb = b.getbal();
+            if (va != vb) return va > vb;
+            return a.getplayerid() < b.getplayerid();
+        });
 }
 
 std::vector<player> Leaderboard::getTopByWinRate(size_t n) const {
-    return topN(sortedByWinRate_, n);
+    return heap_top_k(players_, n,
+        [](const player& a, const player& b) {
+            double va = a.getwinrate(), vb = b.getwinrate();
+            if (va != vb) return va > vb;
+            int ga = a.getgamesplayed(), gb = b.getgamesplayed();
+            if (ga != gb) return ga > gb;
+            return a.getplayerid() < b.getplayerid();
+        });
 }
 
 std::vector<player> Leaderboard::getTopByTotalWinnings(size_t n) const {
-    return topN(sortedByTotalWinnings_, n);
+    return heap_top_k(players_, n,
+        [](const player& a, const player& b) {
+            double va = a.gettwon(), vb = b.gettwon();
+            if (va != vb) return va > vb;
+            return a.getplayerid() < b.getplayerid();
+        });
 }
 
 std::vector<player> Leaderboard::getTopByGamesPlayed(size_t n) const {
-    return topN(sortedByGamesPlayed_, n);
+    return heap_top_k(players_, n,
+        [](const player& a, const player& b) {
+            int va = a.getgamesplayed(), vb = b.getgamesplayed();
+            if (va != vb) return va > vb;
+            return a.getplayerid() < b.getplayerid();
+        });
 }
 
 std::vector<player> Leaderboard::getTopByBiggestWin(size_t n) const {
-    return topN(sortedByBiggestWin_, n);
+    return heap_top_k(players_, n,
+        [](const player& a, const player& b) {
+            double va = a.getbwin(), vb = b.getbwin();
+            if (va != vb) return va > vb;
+            return a.getplayerid() < b.getplayerid();
+        });
 }
 
-// ─── Rank queries ─────────────────────────────────────────────────────
+// ─── Rank queries (sorted-index-based) ────────────────────────────────
 
 player Leaderboard::getRankedPlayer(size_t rank) const {
     if (rank == 0 || rank > players_.size()) {
@@ -50,7 +77,6 @@ size_t Leaderboard::getPlayerRank(const std::string& playerId) const {
     auto it = playerIndexMap_.find(playerId);
     if (it == playerIndexMap_.end()) return 0;
 
-    // Binary search on sortedByBalance_ for the player's index
     size_t playerIdx = it->second;
     auto low = std::lower_bound(
         sortedByBalance_.begin(), sortedByBalance_.end(), playerIdx,
@@ -112,7 +138,7 @@ void Leaderboard::rebuildAll() {
             if (va != vb) return va > vb;
             int ga = players_[a].getgamesplayed();
             int gb = players_[b].getgamesplayed();
-            if (ga != gb) return ga > gb; // more games → higher rank on tie
+            if (ga != gb) return ga > gb;
             return players_[a].getplayerid() < players_[b].getplayerid();
         });
 
@@ -145,15 +171,4 @@ void Leaderboard::rebuildAll() {
             if (va != vb) return va > vb;
             return players_[a].getplayerid() < players_[b].getplayerid();
         });
-}
-
-std::vector<player> Leaderboard::topN(const std::vector<size_t>& sortedIdx,
-                                       size_t n) const {
-    size_t count = std::min(n, sortedIdx.size());
-    std::vector<player> result;
-    result.reserve(count);
-    for (size_t i = 0; i < count; ++i) {
-        result.push_back(players_[sortedIdx[i]]);
-    }
-    return result;
 }
